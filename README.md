@@ -1,6 +1,6 @@
 # AnyCubicControlCenterForMarlin-纵维立方有线控制终端
 
-> 一个通过 USB 串口控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端
+> 一个 USB 串口，就能控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端
 > 无需 OctoPrint、无需树莓派，插上 USB 线材,就能在电脑上完成打印前的全部操作
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
