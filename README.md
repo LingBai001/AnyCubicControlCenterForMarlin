@@ -1,7 +1,7 @@
-# 纵维立方有线控制终端
+# AnyCubicControlCenterForMarlin-纵维立方有线控制终端
 
 > 一个通过 USB 串口控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端
-> 无需 OctoPrint、无需树莓派，插上 USB 线,就能在电脑上完成打印前的全部操作
+> 无需 OctoPrint、无需树莓派，插上 USB 线材,就能在电脑上完成打印前的全部操作
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -35,9 +35,9 @@ Monitor 这类通用工具凑合。它们要么界面停留在十年前，要么
 
 - 不知道你的机型有没有热床，一律显示热床控件；
 - 打开串口时会拉 DTR，**打印过程中连上去，正在打的件直接报废**；
-- 手动调平全靠手敲 G-code。
+- 手动调平全靠手敲 G-code
 
-这个项目把这些补齐：**按机型自动适配界面**、**串口永不误复位**、**五点调平向导**。
+这个项目把这些补齐：**按机型自动适配界面**、**串口永不误复位**、**五点调平向导**
 
 ---
 
