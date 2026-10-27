@@ -1,82 +1,87 @@
-# AnyCubicControlCenterForMarlin-纵维立方有线控制终端
+# 纵维立方有线控制终端
 
-> 一个 USB 串口，就能控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端
-> 无需 OctoPrint、无需树莓派，插上 USB 线材,就能在电脑上完成打印前的全部操作
+> 通过 USB 串口控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端。
+> 不需要 OctoPrint、不需要树莓派，插上 USB 线就能在电脑上完成打印前的全部操作。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-lightgrey.svg)]()
-[![Firmware](https://img.shields.io/badge/Firmware-Marlin%202.0.x-green.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.22.0-green.svg)]()
 
 ---
 
 ## 目录
 
-- [为什么做这个](#为什么做这个)
+- [本次更新（v1.22.0）](#本次更新v1220)
 - [功能特性](#功能特性)
 - [支持的机型](#支持的机型)
 - [快速开始](#快速开始)
+- [两种发送方式的区别](#两种发送方式的区别)
 - [界面说明](#界面说明)
 - [技术实现](#技术实现)
 - [已知限制](#已知限制)
 - [常见问题](#常见问题)
-- [从源码构建](#从源码构建)
-- [目录结构](#目录结构)
 - [配套固件](#配套固件)
 - [贡献与许可](#贡献与许可)
 - [免责声明](#免责声明)
 
 ---
 
-## 为什么做这个
+## 本次更新（v1.22.0）
 
-Anycubic 的原厂上位机只支持 Windows，Linux 用户长期只能靠 Pronterface、Cura 的
-Monitor 这类通用工具凑合。它们要么界面停留在十年前，要么缺少这台机器真正需要的东西：
+这一轮修复的问题，**每一个都是真机上踩出来的**：
 
-- 不知道你的机型有没有热床，一律显示热床控件；
-- 打开串口时会拉 DTR，**打印过程中连上去，正在打的件直接报废**；
-- 手动调平全靠手敲 G-code
-
-这个项目把这些补齐：**按机型自动适配界面**、**串口永不误复位**、**五点调平向导**
+| # | 现象 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | 上传 SD 时刷屏 `Resend: 1` 死循环 | `M28` 打开文件后，Marlin 强制要求每行带 `N` 行号和 `*` 校验和 | 上传改为编号 + 校验和协议，开头先发 `M110 N0` |
+| 2 | 上传失败却开始执行指令（危险） | 不看 `M28` 应答，失败时后续行被当成实时指令 | 校验 `Writing to file` / `open failed` / 超时，失败即取消且不发任何指令 |
+| 3 | 中断上传后文件没关 | `saving` 标志残留，后续指令被写进文件 | 中止时发 `M29` 关闭 + `M30` 删除残file |
+| 4 | USB 重插后软件变僵尸 | 端口名从 `ttyUSB0` 变成 `ttyUSB1`，旧句柄失效，线程静默崩溃 | 线程异常保护 + 看门狗自动枚举端口并重连 |
+| 5 | SD 列表读不出、界面停止刷新 | `parse()` 抛异常导致 GLib 定时器不再续期 | 补回初始化变量 + 消息处理异常隔离 |
+| 6 | 点「中止」反应慢 | 只停发送不停运动，缓冲区指令还在跑 | 清队列 + `M410` 急停 + 关加热 |
+| 7 | 打印中途弹「Click to Resume」 | 各厂 G-code 里的 `M0`/`M600` 暂停指令 | 清洗器自动剔除暂停类指令 |
+| 8 | 「选择…」按钮没反应 | 回调 `lambda w, f=fn: f()` 未传参，绑定即抛 TypeError | 改为 `f(w)`，并统一回调签名 |
+| 9 | 文件选择框打开是空目录 | 起始目录是服务的工作目录，里面没有 `.gcode` | 默认定位「下载」，并加「所有文件」过滤器 |
+| 10 | 看不出到底在不在打印 | 主机流式执行时 `M27` 永远报空闲 | 文件栏实时显示「上传中 X/Y 行」，打印看进度条 |
 
 ---
 
 ## 功能特性
 
 ### 温度
-
 - PLA / ABS / PETG 一键预热预设
-- 自定义温度输入（0–260℃，上限随机型自动调整）
+- 自定义温度（0–260℃，上限随机型自动调整）
 - **一键降温**：关加热 + 风扇全速 + 降到 50℃ 自动停风
 
 ### 风扇
-
 - 无级调速滑条（0–100%）
 - 关 / 30% / 50% / 100% 快捷档
 
 ### 移动
-
 - 方向键盘（X± / Y± / Z±），步长 0.1 / 1 / 10 / 50 mm
 - 全部归零、单轴归零、解锁电机（M84）、限位状态（M119）
 
 ### 手动调平向导
-
 - 自动 `G28` 回原点并抬高 Z
 - 依次走到 **左前 → 右前 → 右后 → 左后 → 中心** 五个点
 - 每点自动降到 0.2mm，配合 A4 纸"轻阻"判断
-- Z 轴微调 ±0.05 / ±0.5 mm，转动一格就能感觉到
+- Z 轴微调 ±0.05 / ±0.5 mm
 
 ### 文件与打印
-
-- **SD 卡**：浏览文件、打印、暂停、继续、停止
-- **电脑文件**：选择本地 G-code 直接流式发送，带 `ok` 流控与 `resend` 重传
+- **上传到 SD 卡**：`M28/M29` 协议写入，传完可直接选择开始打印
+- **发送并打印**：主机逐行执行，不占用 SD 卡
+- **拖放载入**：把 `.gcode` 拖进窗口即可
+- **G-code 兼容清洗**：行号/校验和、两种注释、BOM、大小写
+- **危险指令过滤**：`M0/M1/M600/M25/M226/M112` 自动剔除
+- **按机型过滤**：无热床机型自动剔除 `M140/M190/M141/M191`
 
 ### 其他
-
+- **二次确认**：上传与启动前弹窗确认
+- **中止急停**：点一下立即 `M410` 冻结所有轴
 - **机型自动识别**：连接即发 `M115`，按机型启用/隐藏热床
-- **自动连接**：启动后自动连上次用的串口
+- **自动连接 + 断线重连**：端口重新枚举后自动接回
+- **打印完成提醒**：系统提示音 + 桌面通知
 - **窗口记忆**：记住尺寸与位置
-- 全中文界面
 
 ---
 
@@ -94,7 +99,7 @@ Monitor 这类通用工具凑合。它们要么界面停留在十年前，要么
 | Kobra / Kobra Go / Plus / Max | 有 | 100℃ | 260℃ |
 | 其它 Marlin 设备 | 有（通用档） | 110℃ | 260℃ |
 
-> 机型档案在 `PROFILES` 表里，新增机型只需加一行正则与参数。
+> 新增机型只需在 `PROFILES` 表里加一行正则与参数。
 
 ---
 
@@ -103,12 +108,7 @@ Monitor 这类通用工具凑合。它们要么界面停留在十年前，要么
 ### Linux（Debian / Kali / Ubuntu）
 
 ```bash
-sudo apt install ./anycubic-ctl_1.11.0_all.deb
-```
-
-安装后从应用列表启动「纵维立方有线控制终端」，或终端执行：
-
-```bash
+sudo apt install ./anycubic-ctl_1.22.0_all.deb
 anycubic-ctl
 ```
 
@@ -116,35 +116,31 @@ anycubic-ctl
 
 ### Windows
 
-**方式 A：自己打包 exe（推荐，产物可分发）**
-
 1. 安装 Python 3.8+（勾选 `Add Python to PATH`）
-2. 双击 `build_exe.bat`
-3. 产物在 `dist\anycubic-ctl.exe`
+2. 双击 `build_exe.bat`，产物在 `dist\anycubic-ctl.exe`
+3. 该 exe 内置 Python 运行时、tkinter、pyserial，可直接分发
 
-该 exe 内置 Python 运行时、tkinter、pyserial，可直接拷到没装 Python 的电脑运行。
+---
 
-**方式 B：直接跑源码**
+## 两种发送方式的区别
 
-```bat
-pip install pyserial
-python anycubic_ctl.py
-```
+这是最容易混淆的地方：
 
-或双击 `run.bat`（首次自动装依赖）。
+| | 上传到 SD 卡 | 发送并打印 |
+|---|---|---|
+| 指令 | `M28` → 编号行 → `M29` | 逐行直接执行 |
+| 文件去哪 | 存进打印机的 SD 卡 | 不落盘，执行完即弃 |
+| 打印机是否运动 | **不会** | 会 |
+| 需要行号+校验和 | **需要**（固件强制） | 不需要 |
+| 适用场景 | 正式打印、大文件 | 临时测试件 |
 
-### 源码运行（任意平台）
-
-```bash
-pip install pyserial
-python anycubic_ctl.py
-```
+上传完成后会弹窗询问是否立即开始打印（发 `M23` + `M24`）。
 
 ---
 
 ## 界面说明
 
-布局自适应：窗口宽 ≥ 760px 时双列，变窄自动切单列。
+布局自适应：窗口宽 ≥ 740px 时双列，变窄自动切单列。
 
 ```
 ┌──────────────────────┬──────────────────────┐
@@ -161,7 +157,7 @@ python anycubic_ctl.py
 │  滑条 + 快捷档         │                      │
 ├──────────────────────┤                      │
 │ 电脑上的 G-code       │                      │
-│  选择/发送/中止        │                      │
+│  选择/上传/发送/中止   │                      │
 └──────────────────────┴──────────────────────┘
 ┌────────────────────────────────────────────┐
 │ 控制台：任意 G-code 收发                     │
@@ -174,92 +170,94 @@ python anycubic_ctl.py
 
 ### 串口层：永不误复位
 
-这是本项目最重要的设计决策。
-
 多数 3D 打印机主板（Melzi / CH340 方案）把 USB 转串口芯片的 **DTR 引脚接到了
 MCU 的复位脚**。用标准串口库打开端口时，DTR 会从低变高，等于按了一次复位键 ——
 **打印过程中连上去，正在打的件立刻中断**。
 
 本项目在打开端口时完全不驱动 DTR/RTS：
 
-- **Linux**：绕过 pyserial，直接 `os.open()` + `termios`，清掉 `HUPCL`，
-  控制线保持浮空
-- **Windows**：pyserial 打开前设置 `dtr=False`、`rts=False`、`dsrdtr=False`，
-  打开后再复位一次状态
+- **Linux**：绕过 pyserial，直接 `os.open()` + `termios`，清掉 `HUPCL`
+- **Windows**：pyserial 打开前设置 `dtr=False`、`rts=False`、`dsrdtr=False`
 
-> 这是作者在真机上把一次测试打印打断两次之后加的。
+### SD 写入协议（M28/M29）
+
+Marlin 在 `card.flag.saving` 为真时，**要求每一行都带行号和校验和**：
+
+```
+N1 G1 X10 Y10*40
+N2 M104 S200*101
+N3 G28*16
+```
+
+`*` 后是行内容逐字节异或的结果。`M29` 是唯一例外。发送前先 `M110 N0` 复位计数。
+
+不遵守这个协议的表现是：
+
+```
+Error: No Checksum with line number, Last Line: 0
+Resend: 1
+```
+
+然后主机重发裸指令，固件再报错 —— 无限循环。
 
 ### 流控：ok 逐行 + resend 重传
 
-AVR 主板的串口接收缓冲只有 128 字节，一次性灌入大量 G-code 会丢字符，
-表现为打印错层、乱走。
+AVR 主板的串口接收缓冲只有 128 字节，一次性灌入会丢字符。
 
-发送器采用严格应答式：
+发送器采用严格应答式：发一行 → 等 `ok` → 发下一行；收到 `resend N` 回退重发。
 
-```
-发一行 → 等 "ok" → 发下一行
-收到 "resend N" → 回退一行重发
-```
+**传输期间会暂停状态轮询**（每 2 秒的 `M105/M114/M27`）—— 否则轮询的 `ok` 会被
+误当成数据行的应答，导致两行指令同时在途、缓冲错位。
 
-牺牲速度换正确性。大文件建议仍拷到 SD 卡打印。
+### 连接看门狗
 
-### 机型识别
-
-```
-M115 → FIRMWARE_NAME:Marlin 2.0.9.3 MACHINE_TYPE:Mega Zero ...
-                ↓ 正则匹配 PROFILES[].match
-        命中档案 → 应用热床存在性、温度上限、成型尺寸
-```
-
-### 跨平台 GUI
-
-| 平台 | GUI 工具包 | 原因 |
-|---|---|---|
-| Linux | GTK3（PyGObject） | 与 GNOME 桌面原生一致，视觉最贴合 |
-| Windows | Tkinter（标准库） | GTK 在 Windows 部署依赖繁重，Tk 零安装 |
-
-两版功能与布局完全一致，仅渲染层不同。
+USB 重新插拔后设备会重新枚举，端口名可能从 `ttyUSB0` 变成 `ttyUSB1`。
+线程内任何 I/O 异常都会上报并退出，主线程的看门狗每 2.5 秒检查线程存活，
+发现死亡就重新枚举端口并自动重连。
 
 ---
 
 ## 已知限制
 
 1. **Wayland 下窗口位置记忆无效**
-   GNOME 的 Wayland 合成器不允许客户端自定位窗口，`move()` 被忽略。
-   尺寸与最大化状态正常。需要位置记忆请切 X11 会话。
+   GNOME 的合成器不允许客户端自定位窗口。尺寸与最大化状态正常。
 
 2. **大文件发送慢**
-   逐行应答式流控，每行约 10–20ms。4MB 的 G-code 约需 40 分钟。
-   大件请用 SD 卡。
+   逐行应答式流控，每行约 10–20ms。大件请用「上传到 SD 卡」。
 
 3. **不含网格补偿**
-   受下位机 128KB Flash 限制（固件已占 99.8%），本工具只做
-   上位机引导的手动五点调平，不生成网格补偿数据。
-   换 32 位主板后可接入 Marlin 的 `MESH_BED_LEVELING`。
+   受下位机 128KB Flash 限制（固件已占 99.8%），只做上位机引导的手动五点调平。
+
+4. **圆弧指令不支持**
+   固件为省空间关闭了 `ARC_SUPPORT`，文件里的 `G2/G3` 会报错（载入时会提示）。
 
 ---
 
 ## 常见问题
 
-**Q：下拉框里没有串口？**
+**Q：上传时满屏 `Resend: 1`？**
 
-- Linux：确认 `ls /dev/ttyUSB*` 存在，用户需在 `dialout` 组
-  （`sudo usermod -aG dialout $USER`，重新登录生效）
-- Windows：设备管理器里应出现 `USB-SERIAL CH340 (COMx)`，
-  没有则装驱动：<https://www.wch.cn/downloads/CH341SER_EXE.html>
+`M28` 之后必须发带行号和校验和的行。见 [SD 写入协议](#sd-写入协议m28m29)。
 
-**Q：连接失败 / 端口被占用？**
+**Q：上传后 SD 卡里没有文件？**
+
+看控制台是否有 `open failed` 或超时。没有插卡时固件是**静默返回**的，
+本程序会在 4 秒无应答后取消上传并提示。
+
+**Q：打印中途停在「Click to Resume」？**
+
+原文件里含 `M0`/`M600` 一类暂停指令。本程序载入时会自动剔除并在控制台列出。
+若已发出，按一下屏幕旋钮即可继续。
+
+**Q：为什么最大温度是 245℃ 而不是 260℃？**
+
+Marlin 的可设上限是 `HEATER_0_MAXTEMP − HOTEND_OVERSHOOT`。
+配套固件已把 `MAXTEMP` 提到 275，可设上限即 260℃。
+
+**Q：串口找不到 / 端口被占用？**
 
 同一时刻只能有一个程序占用串口。关闭 Pronterface、Cura、Arduino IDE 等。
-
-**Q：为什么连上后机器没有重启？**
-
-这是有意为之 —— 见 [串口层：永不误复位](#串口层永不误复位)。
-
-**Q：风扇关不掉？**
-
-若机型风扇使用硬件 PWM 而定时器被步进电机占用，M106 会失效。
-需要在固件里启用 `FAN_SOFT_PWM`（本项目配套固件已启用）。
+Linux 下用户需在 `dialout` 组。
 
 **Q：能控制树脂机（Photon 系列）吗？**
 
@@ -267,56 +265,16 @@ M115 → FIRMWARE_NAME:Marlin 2.0.9.3 MACHINE_TYPE:Mega Zero ...
 
 ---
 
-## 从源码构建
-
-### Linux 打 deb
-
-```bash
-mkdir -p pkg/DEBIAN pkg/usr/bin pkg/usr/share/applications \
-         pkg/usr/share/icons/hicolor/scalable/apps
-install -m755 anycubic-ctl.py pkg/usr/bin/anycubic-ctl
-# 写入 DEBIAN/control、.desktop、图标后：
-dpkg-deb --build pkg anycubic-ctl_1.11.0_all.deb
-```
-
-### Windows 打 exe
-
-```bat
-python -m pip install pyinstaller pyserial
-python -m PyInstaller --onefile --windowed --name anycubic-ctl ^
-    --icon anycubic.ico anycubic_ctl.py
-```
-
-或直接双击 `build_exe.bat`。
-
----
-
-## 目录结构
-
-```
-anycubic-ctl/
-├── anycubic_ctl.py          # 跨平台主体（Tkinter + pyserial）
-├── run.bat                  # Windows 直接运行入口
-├── build_exe.bat            # Windows 一键打包 exe
-├── anycubic.ico             # 应用图标（6 尺寸）
-├── requirements.txt         # pyserial
-└── README.md
-```
-
-Linux 版为单文件 `/usr/bin/anycubic-ctl`（GTK3），结构类似。
-
----
-
 ## 配套固件
 
-本项目在 Anycubic Mega Zero（ATmega1284P / Melzi）上配套做过以下固件工作，
-供同机型参考：
+本项目在 Anycubic Mega Zero（ATmega1284P / Melzi）上配套做过以下工作：
 
-- 升级到社区固件 **Marlin 2.0.9.3-kad1**（DKMS 无关，AVR 直接刷写）
-- 修复**倒挂风扇不可控**：启用 `FAN_SOFT_PWM`
+- 社区固件 **Marlin 2.0.9.3-kad1**
+- 修复**风扇不可控**：启用 `FAN_SOFT_PWM`
   （硬件 PWM 引脚 PD4/OC1B 与步进定时器 Timer1 冲突）
+- 限温从 245℃ 解锁到 **260℃**（`HEATER_0_MAXTEMP` 260 → 275）
 - 中文菜单（173 字子集）与自定义开机 Logo
-- 因 128KB Flash 限制裁掉非官方硬件功能（换料、网格调平、断料检测等）
+- 因 128KB Flash 限制裁掉非本机硬件功能（换料、网格调平、断料检测等）
 
 > 固件基于 [Marlin](https://github.com/MarlinFirmware/Marlin)（GPL-2.0）
 > 与 [kad/Marlin](https://github.com/kad/Marlin) 的 Mega Zero 配置。
@@ -343,10 +301,10 @@ Linux 版为单文件 `/usr/bin/anycubic-ctl`（GTK3），结构类似。
 
 - 加热温度由使用者自行设定，请勿超过耗材与热端的安全范围
 - 调平与移动前请确认喷头附近无遮挡、Z 轴有足够余量
+- `M410` 急停不保证精确停在指令位置，急停后请重新 `G28`
 - 刷写固件有变砖风险，请务必先备份原厂固件
 
 作者不对因使用本工具造成的任何设备损坏或人身伤害承担责任。
-使用即表示你理解并接受这些风险。
 
 ---
 
