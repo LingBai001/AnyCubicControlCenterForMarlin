@@ -1,9 +1,9 @@
 # 纵维立方有线控制终端
 
-> 通过 USB 串口控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端。
-> 不需要 OctoPrint、不需要树莓派，插上 USB 线就能在电脑上完成打印前的全部操作。
+> 一个USB 串口，就能控制 Anycubic（纵维立方）全系 FDM 打印机的桌面控制终端
+> 无需 OctoPrint、无需树莓派，插上 USB 线,就能在电脑上完成打印前的全部操作
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL-3](https://img.shields.io/badge/License-GPL--3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-lightgrey.svg)]()
 [![Version](https://img.shields.io/badge/Version-1.22.0-green.svg)]()
